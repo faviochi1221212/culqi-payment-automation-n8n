@@ -1,0 +1,430 @@
+{
+  "name": "Culqi Checkout PRO (Switch + Postgres + Telegram)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "culqi/checkout",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "70503d48-ac53-4a30-8aaf-be4303db4c83",
+      "name": "Webhook Checkout",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -880,
+        480
+      ],
+      "webhookId": "5d09d321-dad9-48a8-89f1-e6c6d300a4e7"
+    },
+    {
+      "parameters": {
+        "jsCode": "const in0 = $input.first().json;\n\n// 1) Detecta dónde está el payload real\nlet body = in0;\n\n// caso típico: el body viene anidado\nif (in0.body !== undefined) body = in0.body;\n\n// caso: body llega como string (raw)\nif (typeof body === 'string') {\n  try { body = JSON.parse(body); } catch (e) { /* se queda string */ }\n}\n\n// 2) Extrae token en varias formas posibles\nconst token =\n  (body.token && String(body.token).trim()) ||\n  (body.tokenId && String(body.tokenId).trim()) ||\n  (body.token && body.token.id ? String(body.token.id).trim() : '') ||\n  '';\n\n// 3) Campos\nconst email = (body.email || (body.token && body.token.email) || '').toString().trim();\nconst currency_code = (body.currency_code || 'PEN').toString().trim();\nconst description = (body.description || 'Compra').toString().trim();\nconst order_id = (body.order_id || `ORD-${Date.now()}`).toString().trim();\nconst metadata = (body.metadata && typeof body.metadata === 'object') ? body.metadata : {};\n\nconst amount = Number(body.amount);\n\n// 4) Validaciones\nif (!token) throw new Error('Falta token (no llegó en token/tokenId/token.id)');\nif (!email || !email.includes('@')) throw new Error('Email inválido');\nif (!Number.isFinite(amount) || amount <= 0) throw new Error('amount inválido');\n\n// 5) IMPORTANTE: en Code node devuelve items con .json\nreturn [{\n  json: {\n    token,\n    email,\n    amount: Math.trunc(amount),\n    currency_code,\n    description,\n    order_id,\n    metadata,\n  }\n}];"
+      },
+      "id": "ed036487-bc6d-4e7d-9dc4-92f477a5fea8",
+      "name": "Validate + Normalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -672,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.culqi.com/v2/charges",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "clave privada culqi"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "amount",
+              "value": "={{$json.amount}}"
+            },
+            {
+              "name": "currency_code",
+              "value": "={{$json.currency_code}}"
+            },
+            {
+              "name": "email",
+              "value": "={{$json.email}}"
+            },
+            {
+              "name": "source_id",
+              "value": "={{$json.token}}"
+            },
+            {
+              "name": "description",
+              "value": "={{$json.description}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e5557aeb-6d27-4cfa-b5d0-08055354d862",
+      "name": "Culqi Charge",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -432,
+        480
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst prev=$input.first().json;\n\nconst ok=!!prev.id;\n\nreturn [{\n  json:{\n    status: ok ? \"ok\":\"fail\",\n    charge_id: ok ? prev.id:\"\",\n    order_id:$node[\"Validate + Normalize\"].json.order_id,\n    email:$node[\"Validate + Normalize\"].json.email,\n    amount:$node[\"Validate + Normalize\"].json.amount,\n    currency_code:$node[\"Validate + Normalize\"].json.currency_code,\n    description:$node[\"Validate + Normalize\"].json.description,\n    raw_json:prev\n  }\n}];\n"
+      },
+      "id": "8828789a-7b4a-487e-95e4-094f7e205f8a",
+      "name": "Build Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -192,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{$json.status}}",
+        "rules": {
+          "rules": [
+            {
+              "value2": "ok"
+            }
+          ]
+        },
+        "fallbackOutput": 1
+      },
+      "id": "b46a203b-b352-4bb8-ac1e-9173f700b155",
+      "name": "Switch Status",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [
+        48,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "6612612081",
+        "text": "={{`✅ Venta OK\\nOrder: ${$json.order_id}\\nMonto: S/ ${(Number($json.amount)/100).toFixed(2)} ${$json.currency_code}`}}",
+        "additionalFields": {}
+      },
+      "id": "dfb675c0-05ed-4ee0-b773-6b09e770ecb1",
+      "name": "Telegram OK",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        480,
+        368
+      ],
+      "webhookId": "d0a8d6b7-92bd-454e-ad9e-9a347d93c3a0",
+      "credentials": {
+        "telegramApi": {
+          "id": "IBApRVigIizoIpoi",
+          "name": "Telegram account 4"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "6612612081",
+        "text": "={{`❌ Venta FAIL\\nOrder: ${$json.order_id}\\nError: ${$json.raw_json.message || 'error'}`}}",
+        "additionalFields": {}
+      },
+      "id": "0165d496-0fc8-4710-9e95-caf8ce53c1f5",
+      "name": "Telegram FAIL",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        480,
+        592
+      ],
+      "webhookId": "90808887-f2db-43a6-ae4d-a6e1f0d89c0c",
+      "credentials": {
+        "telegramApi": {
+          "id": "IBApRVigIizoIpoi",
+          "name": "Telegram account 4"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "culqi_sales",
+          "mode": "list",
+          "cachedResultName": "culqi_sales"
+        },
+        "dataMode": "defineBelow",
+        "valuesToSend": {
+          "values": [
+            {
+              "column": "status",
+              "value": "={{$json.status}}"
+            },
+            {
+              "column": "charge_id",
+              "value": "={{$json.charge_id}}"
+            },
+            {
+              "column": "order_id",
+              "value": "={{$json.order_id}}"
+            },
+            {
+              "column": "email",
+              "value": "={{$json.email}}"
+            },
+            {
+              "column": "amount",
+              "value": "={{$json.amount}}"
+            },
+            {
+              "column": "currency_code",
+              "value": "={{$json.currency_code}}"
+            },
+            {
+              "column": "description",
+              "value": "={{$json.description}}"
+            },
+            {
+              "column": "outcome_type",
+              "value": "={{$json.outcome_type}}"
+            },
+            {
+              "column": "code",
+              "value": "={{$json.code}}"
+            },
+            {
+              "column": "user_message",
+              "value": "={{$json.user_message}}"
+            },
+            {
+              "column": "merchant_message",
+              "value": "merchant_message"
+            },
+            {
+              "column": "raw_json",
+              "value": "={{$json.raw_json}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f050fd0a-cb4e-4007-ae53-bf4aa322235a",
+      "name": "Save Sale (Postgres)2",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        288,
+        432
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PXxF9lPc0wCbnt79",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "culqi_sales",
+          "mode": "list",
+          "cachedResultName": "culqi_sales"
+        },
+        "dataMode": "defineBelow",
+        "valuesToSend": {
+          "values": [
+            {
+              "column": "status",
+              "value": "={{$json.status}}"
+            },
+            {
+              "column": "charge_id",
+              "value": "={{$json.charge_id}}"
+            },
+            {
+              "column": "order_id",
+              "value": "={{$json.order_id}}"
+            },
+            {
+              "column": "email",
+              "value": "={{$json.email}}"
+            },
+            {
+              "column": "amount",
+              "value": "={{$json.amount}}"
+            },
+            {
+              "column": "currency_code",
+              "value": "={{$json.currency_code}}"
+            },
+            {
+              "column": "description",
+              "value": "={{$json.description}}"
+            },
+            {
+              "column": "outcome_type",
+              "value": "={{$json.outcome_type}}"
+            },
+            {
+              "column": "code",
+              "value": "={{$json.code}}"
+            },
+            {
+              "column": "user_message",
+              "value": "={{$json.user_message}}"
+            },
+            {
+              "column": "merchant_message",
+              "value": "merchant_message"
+            },
+            {
+              "column": "raw_json",
+              "value": "={{$json.raw_json}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "98516474-6a9a-4d15-9300-8d586f94b98d",
+      "name": "Save Sale (Postgres)3",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        304,
+        640
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PXxF9lPc0wCbnt79",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Checkout": {
+      "main": [
+        [
+          {
+            "node": "Validate + Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate + Normalize": {
+      "main": [
+        [
+          {
+            "node": "Culqi Charge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Culqi Charge": {
+      "main": [
+        [
+          {
+            "node": "Build Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Result": {
+      "main": [
+        [
+          {
+            "node": "Switch Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch Status": {
+      "main": [
+        [
+          {
+            "node": "Save Sale (Postgres)2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Save Sale (Postgres)3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Sale (Postgres)2": {
+      "main": [
+        [
+          {
+            "node": "Telegram OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Sale (Postgres)3": {
+      "main": [
+        [
+          {
+            "node": "Telegram FAIL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "f4297216-17a6-49ed-a195-e9deb2ca3c92",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9f78196d23155e08878d99cb2958a508e7163855e8d3da196b1c7d22d77497e3"
+  },
+  "id": "ITu3ohc2yMJCGC6X",
+  "tags": []
+}
