@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Culqi Checkout (modal) → n8n</title>
+
+  <!-- Culqi Checkout v4 -->
+  <script src="https://checkout.culqi.com/js/v4"></script>
+
+  <style>
+    :root {
+      --bg: #0b1220;
+      --card: rgba(255,255,255,0.05);
+      --border: rgba(255,255,255,0.10);
+      --text: rgba(255,255,255,0.92);
+      --muted: rgba(255,255,255,0.70);
+      --btn: #ffffff;
+      --btnText: #0b1220;
+      --danger: #ff4d4d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif;
+      background: radial-gradient(1200px 600px at 10% 0%, #18284a 0%, var(--bg) 45%, #060a13 100%);
+      color: var(--text);
+      padding: 28px;
+    }
+    .wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1.1fr 1fr;
+      gap: 18px;
+      align-items: start;
+    }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 22px;
+      backdrop-filter: blur(10px);
+    }
+    h1 {
+      margin: 0 0 8px 0;
+      font-size: 34px;
+      letter-spacing: 0.2px;
+    }
+    .sub { color: var(--muted); margin-bottom: 18px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    label { display:block; margin: 10px 0 6px; color: var(--muted); font-size: 14px; }
+    input {
+      width: 100%;
+      padding: 12px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(0,0,0,0.20);
+      color: var(--text);
+      outline: none;
+    }
+    input:focus { border-color: rgba(255,255,255,0.25); }
+    .btns { display:flex; gap: 10px; margin-top: 16px; }
+    button {
+      border: 0;
+      border-radius: 12px;
+      padding: 12px 14px;
+      cursor: pointer;
+      font-weight: 700;
+    }
+    .primary { background: var(--btn); color: var(--btnText); }
+    .ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
+    .note {
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+    .pill {
+      margin-top: 12px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: rgba(0,0,0,0.18);
+      font-size: 12px;
+      color: var(--muted);
+      word-break: break-all;
+    }
+    pre {
+      margin: 0;
+      background: rgba(0,0,0,0.35);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px;
+      min-height: 280px;
+      overflow: auto;
+      font-size: 12px;
+      color: rgba(255,255,255,0.85);
+    }
+    .err { color: var(--danger); font-weight: 700; }
+    .small { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <div class="panel">
+      <h1>Culqi Checkout (modal) → n8n</h1>
+      <div class="sub">Abre el modal de Culqi, genera un <b>token</b> y lo envía a tu <b>Webhook de n8n</b>.</div>
+
+      <div class="grid2">
+        <div>
+          <label>Email</label>
+          <input id="email" value="test@culqi.com" placeholder="correo@dominio.com" />
+        </div>
+        <div>
+          <label>Monto (S/)</label>
+          <input id="amount_soles" value="10.00" placeholder="10.00" />
+          <div class="small" id="amount_help">Centavos: 1000</div>
+        </div>
+      </div>
+
+      <label>Descripción</label>
+      <input id="description" value="Compra - Pedido #123" />
+
+      <label>Order ID</label>
+      <input id="order_id" value="ORD-123" />
+
+      <div class="btns">
+        <button class="primary" id="payBtn">Pagar (abre Culqi)</button>
+        <button class="ghost" id="clearBtn">Limpiar</button>
+      </div>
+
+      <div class="pill">
+        <div><b>Public Key:</b> <span id="pkView"></span></div>
+        <div style="margin-top:6px;"><b>Webhook:</b> <span id="whView"></span></div>
+      </div>
+
+      <div class="note">
+        Nota: Culqi usa <b>centavos</b>. S/10.00 se envía como 1000.<br/>
+        Si ves errores al abrir como <b>Archivo (file://)</b>, ábrelo con VS Code + “Live Server” (recomendado).
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2 style="margin:0 0 10px 0;">Respuesta</h2>
+      <pre id="out">{}</pre>
+    </div>
+  </div>
+
+  <script>
+    // =========================
+    // CONFIG (EDITA ESTO)
+    // =========================
+    const CULQI_PUBLIC_KEY = "aqui va tu clave secreta";
+    const N8N_WEBHOOK_URL  = "http://localhost:5678/webhook-test/culqi/checkout";
+    // =========================
+
+    // Mostrar config en pantalla
+    document.getElementById("pkView").textContent = CULQI_PUBLIC_KEY;
+    document.getElementById("whView").textContent = N8N_WEBHOOK_URL;
+
+    // Setear public key a Culqi
+    Culqi.publicKey = CULQI_PUBLIC_KEY;
+
+    const $out = document.getElementById("out");
+
+    function show(obj) {
+      $out.textContent = JSON.stringify(obj, null, 2);
+    }
+
+    function solesToCents(input) {
+      // Acepta "10", "10.0", "10.00", "10,50"
+      const s = String(input).trim().replace(",", ".");
+      const n = Number(s);
+      if (!Number.isFinite(n) || n <= 0) return null;
+      return Math.round(n * 100);
+    }
+
+    function updateCentsLabel() {
+      const cents = solesToCents(document.getElementById("amount_soles").value);
+      document.getElementById("amount_help").textContent = cents ? `Centavos: ${cents}` : "Centavos: (monto inválido)";
+    }
+
+    document.getElementById("amount_soles").addEventListener("input", updateCentsLabel);
+    updateCentsLabel();
+
+    document.getElementById("clearBtn").addEventListener("click", () => show({}));
+
+    // Abrir Culqi modal
+    document.getElementById("payBtn").addEventListener("click", () => {
+      show({});
+
+      const email = document.getElementById("email").value.trim();
+      const amountSoles = document.getElementById("amount_soles").value;
+      const cents = solesToCents(amountSoles);
+
+      if (!email || !email.includes("@")) {
+        show({ ok:false, error:"Email inválido" });
+        return;
+      }
+      if (!cents) {
+        show({ ok:false, error:"Monto inválido" });
+        return;
+      }
+
+      // ✅ IMPORTANTE:
+      // NO uses "order" aquí (eso te estaba rompiendo)
+      Culqi.settings({
+        title: "PRUEBA-OLIVIA-999",
+        currency: "PEN",
+        amount: cents
+      });
+
+      Culqi.open();
+    });
+
+    // Callback global que Culqi llama cuando crea el token o da error
+    // (Debe existir exactamente con este nombre)
+    async function culqi() {
+      try {
+        if (Culqi.error) {
+          // Error dentro del modal
+          show({
+            ok: false,
+            culqi_error: Culqi.error
+          });
+          return;
+        }
+
+        const token = Culqi.token;
+        if (!token || !token.id) {
+          show({ ok:false, error:"No se recibió token de Culqi" });
+          return;
+        }
+
+        const email = document.getElementById("email").value.trim();
+        const cents = solesToCents(document.getElementById("amount_soles").value);
+        const description = document.getElementById("description").value.trim();
+        const order_id = document.getElementById("order_id").value.trim();
+
+        const payload = {
+          token: token.id,
+          email,
+          amount: cents,
+          currency_code: "PEN",
+          description,
+          order_id,
+          metadata: { canal: "web", origen: "culqi_checkout" }
+        };
+
+        // Enviar token + data a n8n
+        const res = await fetch(N8N_WEBHOOK_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        let data;
+        const text = await res.text();
+        try { data = JSON.parse(text); } catch(e) { data = { raw: text }; }
+
+        show({
+          http_status: res.status,
+          token: token.id,
+          sent: payload,
+          n8n: data
+        });
+
+      } catch (err) {
+        show({ ok:false, error: String(err) });
+      }
+    }
+    window.culqi = culqi;
+  </script>
+</body>
+</html>
