@@ -61,5 +61,22 @@ El siguiente diagrama muestra el flujo implementado en n8n.
 
 ---
 
-# Estructura del Repositorio
+# Seguridad y Configuración de Claves
+
+Por razones de seguridad, las claves de la API de Culqi no están incluidas en este repositorio.
+
+Cada usuario debe configurar sus propias credenciales antes de ejecutar el proyecto.
+
+Las claves necesarias son:
+
+- Public Key de Culqi (utilizada en la página web para generar el token de pago)
+- Secret Key de Culqi (utilizada en el workflow de n8n para procesar el cargo)
+
+Estas claves deben configurarse manualmente en:
+
+- el archivo del frontend donde se inicializa Culqi
+- las credenciales o variables utilizadas dentro del workflow de n8n
+
+
+
 
